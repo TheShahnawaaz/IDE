@@ -18,7 +18,7 @@ function AppContent() {
         <div className="max-w-[1150px] mx-auto flex justify-between items-center">
           <div className="flex items-center gap-3">
             <img 
-              src={!isDark ? "/images/logo-web-dark.png" : "/images/logo-web.png"}
+              src={isDark ? "/images/logo-web-dark.png" : "/images/logo-web.png"}
               alt="CodeIDE Logo" 
               className="h-8 w-auto"
             />
