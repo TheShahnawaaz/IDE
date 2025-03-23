@@ -1,70 +1,138 @@
-# Getting Started with Create React App
+# Web IDE
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+## Introduction
 
-## Available Scripts
+Welcome to Web IDE - a powerful, browser-based integrated development environment designed for coding, testing, and running programs directly in your browser. This modern IDE offers a feature-rich coding experience without requiring any installation or setup.
 
-In the project directory, you can run:
+## Features
 
-### `npm start`
+### Core Features
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+- **Multi-language Support**: Code in multiple programming languages including C++, Python, Java, JavaScript, and more
+- **Monaco Editor Integration**: Enjoy VS Code-like editing experience with syntax highlighting, code completion, and error detection
+- **Real-time Code Execution**: Run your code instantly with the Judge0 API integration
+- **File Management**: Create, edit, delete, and organize files and folders with an intuitive file explorer
+- **Drag-and-Drop Interface**: Easily organize your workspace with drag-and-drop file management
+- **Dark/Light Theme**: Choose between light and dark themes for comfortable coding in any environment
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+### Advanced Features
 
-### `npm test`
+- **Test Case Management**: Create, edit, and run test cases to validate your code
+- **Individual Test Execution**: Run specific test cases to debug particular inputs
+- **Customizable Layout**: Toggle between horizontal and vertical console layouts
+- **Keyboard Shortcuts**: Enhance productivity with keyboard shortcuts for common operations
+- **Code Formatting**: Format your code with a single click or keyboard shortcut
+- **Auto-save**: Your work is automatically saved to your browser's local storage
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+## Getting Started
 
-### `npm run build`
+### Editor Interface
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+The IDE is divided into several key areas:
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+1. **Toolbar**: Access language selection, file operations, and run buttons
+2. **File Explorer**: Navigate and manage your files and folders (toggle with the hamburger icon)
+3. **Editor**: Write and edit your code
+4. **Console/Test Cases**: View output, provide input, and manage test cases
+5. **Status Bar**: See current status and execution information
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+### Basic Operations
 
-### `npm run eject`
+#### File Management
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+- **Create a new file**: Click the document-plus icon or use `Ctrl+N`
+- **Open a file**: Click the folder icon or use `Ctrl+O`
+- **Save a file**: Click the download icon or use `Ctrl+S`
+- **Close a file**: Click the X on the file tab or use `Ctrl+W`
+- **Toggle file explorer**: Click the hamburger icon or use `Ctrl+B`
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+#### Organizing Your Workspace
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+- **Create folders**: Right-click in the file explorer and select "New Folder"
+- **Drag and drop**: Move files between folders by dragging them
+- **Rename files/folders**: Right-click and select "Rename" or double-click the file tab
+- **Archive files**: Move unused files to the Archive folder for better organization
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+#### Writing Code
 
-## Learn More
+- **Change language**: Select your desired language from the dropdown
+- **Format code**: Click the code bracket icon or use `Shift+Alt+F`
+- **Change theme**: Select from light, dark, or high contrast themes
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+#### Running Code
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+- **Run code**: Click the green play button or press `F5`
+- **Provide input**: Enter input in the input panel before running
+- **View output**: See results in the output panel
+- **Clear input/output**: Use the clear buttons to reset the panels
 
-### Code Splitting
+### Working with Test Cases
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
+1. **Create a test case**:
+   - Go to the "Test Cases" tab
+   - Enter input and expected output
+   - Click "Add Test Case"
 
-### Analyzing the Bundle Size
+2. **Run test cases**:
+   - Run a single test case by clicking the "Run" button next to it
+   - Run all test cases by clicking "Run All Test Cases"
+   - View detailed results in the "Results" tab
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
+3. **Manage test cases**:
+   - Edit or delete test cases as needed
+   - Test cases are saved automatically
 
-### Making a Progressive Web App
+## Common Use Cases
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
+### Competitive Programming
 
-### Advanced Configuration
+Perfect for competitive programming practice:
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
+1. Write your solution in the editor
+2. Create test cases for sample inputs/outputs
+3. Run test cases to verify your solution
+4. Run with custom inputs for edge cases
 
-### Deployment
+### Learning a New Language
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
+1. Select your target language from the dropdown
+2. Create basic programs to understand syntax
+3. Run small code segments to see how they work
+4. Use the console for input/output experimentation
 
-### `npm run build` fails to minify
+### Educational Use
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+Teachers and students can:
+
+1. Share code through the save/load functionality
+2. Create test cases to validate student solutions
+3. Use the workspace organization to manage multiple assignments
+4. Use the Archive folder to store reference solutions
+
+## Keyboard Shortcuts
+
+- `Ctrl+N`: New file
+- `Ctrl+O`: Open file
+- `Ctrl+S`: Save file
+- `Ctrl+W`: Close file
+- `F5`: Run code
+- `Shift+Alt+F`: Format code
+- `Ctrl+B`: Toggle file explorer
+
+## Tips and Tricks
+
+- **Use the Archive folder** to keep your workspace organized while maintaining access to reference files
+- **Create template files** for frequently used code patterns
+- **Use test cases** even for simple programs to ensure correctness
+- **Customize your layout** based on whether you're working with input-heavy or output-heavy programs
+- **Drag the dividers** to resize the file explorer and console panels
+
+## Troubleshooting
+
+- If code execution fails, check the selected language and ensure it matches your code
+- If test cases aren't running, verify that your code reads input in the expected format
+- If the interface seems unresponsive, try refreshing the page (your work is auto-saved)
+
+---
+
+Enjoy coding with Web IDE! This project is under active development, and we welcome your feedback and suggestions for improvement. 
