@@ -333,7 +333,7 @@ const FileExplorer = ({
           )}
         </div>
         {isExpanded && folder.children && (
-          <div className="ml-4">
+          <div className="ml-8">
             {folder.children
               .filter((child) => child.type === "folder")
               .map((childFolder) => renderFolder(childFolder, level + 1))}
