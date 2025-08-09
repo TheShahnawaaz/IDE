@@ -33,6 +33,52 @@ const IDETab = ({ topic }) => {
     theme === "dark" ? "vs-dark" : "light"
   );
 
+  // Editor font family selection (persisted)
+  const availableFonts = [
+    { label: "Consolas", value: "Consolas, 'Courier New', monospace" },
+    {
+      label: "Fira Code",
+      value: "'Fira Code', Consolas, 'Courier New', monospace",
+    },
+    {
+      label: "JetBrains Mono",
+      value: "'JetBrains Mono', Consolas, 'Courier New', monospace",
+    },
+    {
+      label: "Source Code Pro",
+      value: "'Source Code Pro', Consolas, 'Courier New', monospace",
+    },
+    {
+      label: "IBM Plex Mono",
+      value: "'IBM Plex Mono', Consolas, 'Courier New', monospace",
+    },
+    {
+      label: "Ubuntu Mono",
+      value: "'Ubuntu Mono', Consolas, 'Courier New', monospace",
+    },
+    {
+      label: "Inconsolata",
+      value: "Inconsolata, Consolas, 'Courier New', monospace",
+    },
+    {
+      label: "Space Mono",
+      value: "'Space Mono', Consolas, 'Courier New', monospace",
+    },
+    { label: "Monaco", value: "Monaco, Consolas, 'Courier New', monospace" },
+    { label: "Courier New", value: "'Courier New', Courier, monospace" },
+  ];
+  const [editorFontFamily, setEditorFontFamily] = useState(() => {
+    return (
+      localStorage.getItem("ide_editor_font_family") ||
+      "Consolas, 'Courier New', monospace"
+    );
+  });
+  const handleFontFamilyChange = (e) => {
+    const newFamily = e.target.value;
+    setEditorFontFamily(newFamily);
+    localStorage.setItem("ide_editor_font_family", newFamily);
+  };
+
   // File explorer state
   const [workspace, setWorkspace] = useState(() => {
     const savedWorkspace = localStorage.getItem("ide_workspace");
@@ -182,6 +228,25 @@ int main() {
     return savedValue !== null ? JSON.parse(savedValue) : true;
   });
 
+  const [isOutputVisible, setIsOutputVisible] = useState(() => {
+    const saved = localStorage.getItem("ide_output_visible");
+    return saved !== null ? JSON.parse(saved) : true;
+  });
+
+  // Image preview state for secondary pane (used when dropping images)
+  const [secondaryImagePreviewUrl, setSecondaryImagePreviewUrl] =
+    useState(null);
+  const [secondaryImageName, setSecondaryImageName] = useState("");
+  const clearSecondaryImagePreview = () => {
+    if (secondaryImagePreviewUrl) {
+      try {
+        URL.revokeObjectURL(secondaryImagePreviewUrl);
+      } catch (_) {}
+    }
+    setSecondaryImagePreviewUrl(null);
+    setSecondaryImageName("");
+  };
+
   const fileNameInputRef = useRef(null);
   const editorRef = useRef(null);
   const monacoRef = useRef(null);
@@ -314,7 +379,7 @@ int main() {
     // Set editor options
     editor.updateOptions({
       fontSize: 20,
-      fontFamily: "Consolas, 'Courier New', monospace",
+      fontFamily: editorFontFamily,
       lineNumbers: "on",
       minimap: { enabled: true },
       scrollBeyondLastLine: false,
@@ -534,6 +599,13 @@ int main() {
     localStorage.setItem("ide_explorer_visible", JSON.stringify(newValue));
   };
 
+  // Toggle output (Console/Test Cases) panel
+  const toggleOutput = () => {
+    const newValue = !isOutputVisible;
+    setIsOutputVisible(newValue);
+    localStorage.setItem("ide_output_visible", JSON.stringify(newValue));
+  };
+
   // Load languages on component mount
   useEffect(() => {
     // Setup keyboard shortcuts
@@ -545,6 +617,31 @@ int main() {
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [activeFileId]);
+
+  // Allow pasting images from clipboard to open in secondary pane
+  useEffect(() => {
+    const handlePasteImage = (e) => {
+      const items = e.clipboardData?.items || [];
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item && item.kind === "file") {
+          const file = item.getAsFile();
+          if (file && file.type && file.type.startsWith("image/")) {
+            e.preventDefault();
+            const url = URL.createObjectURL(file);
+            clearSecondaryImagePreview();
+            setSecondaryImagePreviewUrl(url);
+            setSecondaryImageName(file.name || "pasted-image.png");
+            if (!isSplitView) setIsSplitView(true);
+            break;
+          }
+        }
+      }
+    };
+
+    window.addEventListener("paste", handlePasteImage);
+    return () => window.removeEventListener("paste", handlePasteImage);
+  }, [isSplitView]);
 
   // Set selected language when active file changes
   useEffect(() => {
@@ -945,11 +1042,21 @@ int main() {
     const input = document.createElement("input");
     input.type = "file";
     input.accept =
-      ".py,.c,.cpp,.h,.hpp,.java,.js,.jsx,.ts,.tsx,.rb,.cs,.go,.rs,.php,.html,.css,.json,.md,.txt";
+      ".py,.c,.cpp,.h,.hpp,.java,.js,.jsx,.ts,.tsx,.rb,.cs,.go,.rs,.php,.html,.css,.json,.md,.txt,.png,.jpg,.jpeg,.gif,.webp,.bmp,.svg";
 
     input.onchange = (e) => {
       const file = e.target.files[0];
       if (!file) return;
+
+      // If the selected file is an image, preview it in the secondary pane
+      if (file.type && file.type.startsWith("image/")) {
+        const url = URL.createObjectURL(file);
+        clearSecondaryImagePreview();
+        setSecondaryImagePreviewUrl(url);
+        setSecondaryImageName(file.name);
+        if (!isSplitView) setIsSplitView(true);
+        return;
+      }
 
       const reader = new FileReader();
       reader.onload = (event) => {
@@ -1106,23 +1213,6 @@ main();`;
       setStatus("Cannot close the last tab");
       return;
     }
-
-    const fileToClose = files.find((file) => file.id === fileId);
-
-    if (fileToClose && fileToClose.content.trim() !== "") {
-      if (
-        !window.confirm(
-          `Do you want to save changes to ${fileToClose.name} before closing?`
-        )
-      ) {
-        // User chose not to save, just close
-        removeFile(fileId);
-        return;
-      }
-      // User chose to save before closing
-      saveFile(fileId);
-    }
-
     removeFile(fileId);
   };
 
@@ -2173,6 +2263,23 @@ main();`;
   // Handle file drop for the editor area
   const handleEditorDrop = (e, isSecondary) => {
     e.preventDefault();
+
+    // Support dropping external files (e.g., images) from desktop
+    const dt = e.dataTransfer;
+    if (dt && dt.files && dt.files.length > 0) {
+      const file = dt.files[0];
+      if (file.type && file.type.startsWith("image/")) {
+        // Create preview URL and open in secondary pane
+        const url = URL.createObjectURL(file);
+        clearSecondaryImagePreview();
+        setSecondaryImagePreviewUrl(url);
+        setSecondaryImageName(file.name);
+        if (!isSplitView) setIsSplitView(true);
+        // Ensure the image shows in secondary pane; keep active file on primary
+        return;
+      }
+    }
+
     const fileId = e.dataTransfer.getData("fileId");
 
     // Remove visual feedback
@@ -2316,6 +2423,24 @@ main();`;
             </select>
           </div>
 
+          {/* Font Selection */}
+          <div className="flex items-center">
+            <label className="hidden sm:block text-gray-700 dark:text-gray-300 mr-2">
+              Font:
+            </label>
+            <select
+              value={editorFontFamily}
+              onChange={handleFontFamilyChange}
+              className="bg-gray-50 dark:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-md px-3 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              {availableFonts.map((f) => (
+                <option key={f.label} value={f.value}>
+                  {f.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
           {/* File Operations */}
           <div className="flex items-center gap-2 ml-auto">
             {/* <button
@@ -2348,10 +2473,39 @@ main();`;
             </button>
             <button
               onClick={toggleExplorer}
-              className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 p-2 rounded hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors flex items-center"
+              aria-pressed={isExplorerVisible}
+              className={`p-2 rounded transition-colors flex items-center ${
+                isExplorerVisible
+                  ? "bg-blue-500 text-white hover:bg-blue-600"
+                  : "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600"
+              }`}
               title="Toggle Explorer (Ctrl+B)"
             >
               <Bars3Icon className="h-5 w-5" />
+            </button>
+            <button
+              onClick={toggleOutput}
+              aria-pressed={isOutputVisible}
+              className={`p-2 rounded transition-colors flex items-center ${
+                isOutputVisible
+                  ? "bg-blue-500 text-white hover:bg-blue-600"
+                  : "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600"
+              }`}
+              title="Toggle Console/Test Cases Panel"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                className="h-5 w-5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <line x1="3" y1="15" x2="21" y2="15" />
+              </svg>
             </button>
             <button
               onClick={toggleSplitView}
@@ -2543,7 +2697,8 @@ main();`;
                         readOnly: false,
                         minimap: { enabled: true },
                         fontSize: 20,
-                        fontFamily: "Consolas, 'Courier New', monospace",
+                        fontFamily: editorFontFamily,
+                        mouseWheelZoom: true,
                       }}
                     />
                   </div>
@@ -2574,7 +2729,22 @@ main();`;
                     )}
                   </div>
                   <div className="h-[calc(100%-1.5rem)] secondary-editor">
-                    {secondaryFile && (
+                    {secondaryImagePreviewUrl ? (
+                      <div className="w-full h-full flex items-center justify-center bg-gray-50 dark:bg-gray-900 relative">
+                        <img
+                          src={secondaryImagePreviewUrl}
+                          alt={secondaryImageName || "Dropped image"}
+                          className="max-w-full max-h-full object-contain"
+                        />
+                        <button
+                          onClick={clearSecondaryImagePreview}
+                          className="absolute top-2 right-2 px-2 py-1 text-xs bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded hover:bg-gray-300 dark:hover:bg-gray-600"
+                          title="Close image preview"
+                        >
+                          Close
+                        </button>
+                      </div>
+                    ) : secondaryFile ? (
                       <Editor
                         height="100%"
                         width="100%"
@@ -2595,11 +2765,11 @@ main();`;
                           readOnly: false,
                           minimap: { enabled: true },
                           fontSize: 20,
-                          fontFamily: "Consolas, 'Courier New', monospace",
+                          fontFamily: editorFontFamily,
+                          mouseWheelZoom: true,
                         }}
                       />
-                    )}
-                    {!secondaryFile && (
+                    ) : (
                       <div className="h-full flex items-center justify-center text-gray-400">
                         <div className="text-center">
                           <p>Drag a file here to open it</p>
@@ -2636,7 +2806,8 @@ main();`;
                     readOnly: false,
                     minimap: { enabled: true },
                     fontSize: 20,
-                    fontFamily: "Consolas, 'Courier New', monospace",
+                    fontFamily: editorFontFamily,
+                    mouseWheelZoom: true,
                   }}
                 />
               </div>
@@ -2644,632 +2815,646 @@ main();`;
           </div>
 
           {/* Resizable handle for output panel */}
-          <div
-            ref={outputDragRef}
-            onMouseDown={handleOutputDragStart}
-            className="h-1 bg-gray-300 dark:bg-gray-700 hover:bg-blue-500 dark:hover:bg-blue-700 cursor-row-resize transition-colors"
-          ></div>
+          {isOutputVisible && (
+            <div
+              ref={outputDragRef}
+              onMouseDown={handleOutputDragStart}
+              className="h-1 bg-gray-300 dark:bg-gray-700 hover:bg-blue-500 dark:hover:bg-blue-700 cursor-row-resize transition-colors"
+            ></div>
+          )}
 
           {/* Tabs for Console and Test Cases */}
-          <div
-            className="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700"
-            style={{ height: `${outputHeight}px` }}
-          >
-            <div className="flex border-b border-gray-200 dark:border-gray-700">
-              <button
-                className={`px-4 py-2 font-medium ${
-                  activeTab === "console"
-                    ? "text-blue-500 border-b-2 border-blue-500"
-                    : "text-gray-700 dark:text-gray-300"
-                }`}
-                onClick={() => setActiveTab("console")}
-              >
-                Console
-              </button>
-              <button
-                className={`px-4 py-2 font-medium ${
-                  activeTab === "testcases"
-                    ? "text-blue-500 border-b-2 border-blue-500"
-                    : "text-gray-700 dark:text-gray-300"
-                }`}
-                onClick={() => setActiveTab("testcases")}
-              >
-                Test Cases
-              </button>
-            </div>
+          {isOutputVisible && (
+            <div
+              className="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700"
+              style={{ height: `${outputHeight}px` }}
+            >
+              <div className="flex border-b border-gray-200 dark:border-gray-700">
+                <button
+                  className={`px-4 py-2 font-medium ${
+                    activeTab === "console"
+                      ? "text-blue-500 border-b-2 border-blue-500"
+                      : "text-gray-700 dark:text-gray-300"
+                  }`}
+                  onClick={() => setActiveTab("console")}
+                >
+                  Console
+                </button>
+                <button
+                  className={`px-4 py-2 font-medium ${
+                    activeTab === "testcases"
+                      ? "text-blue-500 border-b-2 border-blue-500"
+                      : "text-gray-700 dark:text-gray-300"
+                  }`}
+                  onClick={() => setActiveTab("testcases")}
+                >
+                  Test Cases
+                </button>
+              </div>
 
-            <div className="p-2 h-[calc(100%-40px)] overflow-auto">
-              {activeTab === "console" ? (
-                <div className="flex flex-col h-full">
-                  <div
-                    className={`${
-                      isHorizontalLayout ? "flex flex-row" : "flex flex-col"
-                    } h-full gap-2`}
-                  >
-                    {/* Input Box (Now First) */}
+              <div className="p-2 h-[calc(100%-40px)] overflow-auto">
+                {activeTab === "console" ? (
+                  <div className="flex flex-col h-full">
                     <div
                       className={`${
-                        isHorizontalLayout ? "flex-1" : "flex-[2]"
-                      }`}
+                        isHorizontalLayout ? "flex flex-row" : "flex flex-col"
+                      } h-full gap-2`}
                     >
-                      <div className="flex justify-between items-center mb-1">
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                          Input:
-                        </label>
-                        <div className="flex space-x-2">
+                      {/* Input Box (Now First) */}
+                      <div
+                        className={`${
+                          isHorizontalLayout ? "flex-1" : "flex-[2]"
+                        }`}
+                      >
+                        <div className="flex justify-between items-center mb-1">
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                            Input:
+                          </label>
+                          <div className="flex space-x-2">
+                            <button
+                              onClick={toggleLayout}
+                              className="px-2 py-1 text-xs bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors flex items-center"
+                              title={
+                                isHorizontalLayout
+                                  ? "Switch to vertical layout"
+                                  : "Switch to horizontal layout"
+                              }
+                            >
+                              {isHorizontalLayout ? (
+                                <span className="flex items-center">
+                                  <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    className="h-4 w-4 mr-1"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                    stroke="currentColor"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"
+                                    />
+                                  </svg>
+                                  Vertical
+                                </span>
+                              ) : (
+                                <span className="flex items-center">
+                                  <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    className="h-4 w-4 mr-1"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                    stroke="currentColor"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M4 8h16m0 0l-4-4m4 4l-4 4m-8 4H4m0 0l4 4m-4-4l4-4"
+                                    />
+                                  </svg>
+                                  Horizontal
+                                </span>
+                              )}
+                            </button>
+                            <button
+                              onClick={clearInput}
+                              className="px-3 py-1 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                              title="Clear input"
+                            >
+                              Clear
+                            </button>
+                            <button
+                              onClick={runCode}
+                              className="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 transition-colors flex items-center"
+                              title="Run Code (F5)"
+                              disabled={isRunning}
+                            >
+                              <PlayIcon className="h-4 w-4 mr-1" />
+                              Run
+                            </button>
+                          </div>
+                        </div>
+                        <textarea
+                          value={input}
+                          onChange={handleInputChange}
+                          placeholder="Enter input for your program here..."
+                          className="w-full h-[calc(100%-30px)] resize-none font-mono text-sm border rounded p-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 dark:bg-gray-700 text-gray-800 dark:text-gray-200"
+                        ></textarea>
+                      </div>
+
+                      {/* Output Box (Now Second) */}
+                      <div
+                        className={`${
+                          isHorizontalLayout ? "flex-1" : "flex-[3]"
+                        }`}
+                      >
+                        <div className="flex justify-between items-center mb-1">
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                            Output:
+                          </label>
                           <button
-                            onClick={toggleLayout}
-                            className="px-2 py-1 text-xs bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors flex items-center"
-                            title={
-                              isHorizontalLayout
-                                ? "Switch to vertical layout"
-                                : "Switch to horizontal layout"
-                            }
-                          >
-                            {isHorizontalLayout ? (
-                              <span className="flex items-center">
-                                <svg
-                                  xmlns="http://www.w3.org/2000/svg"
-                                  className="h-4 w-4 mr-1"
-                                  fill="none"
-                                  viewBox="0 0 24 24"
-                                  stroke="currentColor"
-                                >
-                                  <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth={2}
-                                    d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"
-                                  />
-                                </svg>
-                                Vertical
-                              </span>
-                            ) : (
-                              <span className="flex items-center">
-                                <svg
-                                  xmlns="http://www.w3.org/2000/svg"
-                                  className="h-4 w-4 mr-1"
-                                  fill="none"
-                                  viewBox="0 0 24 24"
-                                  stroke="currentColor"
-                                >
-                                  <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth={2}
-                                    d="M4 8h16m0 0l-4-4m4 4l-4 4m-8 4H4m0 0l4 4m-4-4l4-4"
-                                  />
-                                </svg>
-                                Horizontal
-                              </span>
-                            )}
-                          </button>
-                          <button
-                            onClick={clearInput}
+                            onClick={clearOutput}
                             className="px-3 py-1 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
-                            title="Clear input"
+                            title="Clear output"
                           >
                             Clear
                           </button>
-                          <button
-                            onClick={runCode}
-                            className="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 transition-colors flex items-center"
-                            title="Run Code (F5)"
-                            disabled={isRunning}
-                          >
-                            <PlayIcon className="h-4 w-4 mr-1" />
-                            Run
-                          </button>
                         </div>
+                        <textarea
+                          value={output}
+                          readOnly
+                          className="w-full h-[calc(100%-30px)] resize-none font-mono text-sm border rounded p-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 dark:bg-gray-700 text-gray-800 dark:text-gray-200"
+                        ></textarea>
                       </div>
-                      <textarea
-                        value={input}
-                        onChange={handleInputChange}
-                        placeholder="Enter input for your program here..."
-                        className="w-full h-[calc(100%-30px)] resize-none font-mono text-sm border rounded p-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 dark:bg-gray-700 text-gray-800 dark:text-gray-200"
-                      ></textarea>
-                    </div>
-
-                    {/* Output Box (Now Second) */}
-                    <div
-                      className={`${
-                        isHorizontalLayout ? "flex-1" : "flex-[3]"
-                      }`}
-                    >
-                      <div className="flex justify-between items-center mb-1">
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                          Output:
-                        </label>
-                        <button
-                          onClick={clearOutput}
-                          className="px-3 py-1 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
-                          title="Clear output"
-                        >
-                          Clear
-                        </button>
-                      </div>
-                      <textarea
-                        value={output}
-                        readOnly
-                        className="w-full h-[calc(100%-30px)] resize-none font-mono text-sm border rounded p-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 dark:bg-gray-700 text-gray-800 dark:text-gray-200"
-                      ></textarea>
                     </div>
                   </div>
-                </div>
-              ) : (
-                <div className="h-full flex flex-col">
-                  {/* Test Cases Panel - Tabs for Inputs and Results */}
-                  <div className="flex border-b border-gray-200 dark:border-gray-700 mb-2">
-                    <button
-                      className={`px-3 py-1 font-medium ${
-                        testCaseInnerTab === "inputs"
-                          ? "text-blue-500 border-b-2 border-blue-500"
-                          : "text-gray-700 dark:text-gray-300"
-                      }`}
-                      onClick={() => setTestCaseInnerTab("inputs")}
-                    >
-                      Inputs
-                    </button>
-                    <button
-                      className={`px-3 py-1 font-medium ${
-                        testCaseInnerTab === "results" &&
-                        testCaseResults.length > 0
-                          ? "text-blue-500 border-b-2 border-blue-500"
-                          : "text-gray-700 dark:text-gray-300"
-                      }`}
-                      onClick={() => {
-                        if (testCaseResults.length > 0) {
-                          setTestCaseInnerTab("results");
-                        } else {
-                          setStatus(
-                            "No test results available yet. Run tests first."
-                          );
-                        }
-                      }}
-                    >
-                      Results{" "}
-                      {testCaseResults.length > 0 &&
-                        `(${testSummary.passed}/${testSummary.total})`}
-                    </button>
-                  </div>
+                ) : (
+                  <div className="h-full flex flex-col">
+                    {/* Test Cases Panel - Tabs for Inputs and Results */}
+                    <div className="flex border-b border-gray-200 dark:border-gray-700 mb-2">
+                      <button
+                        className={`px-3 py-1 font-medium ${
+                          testCaseInnerTab === "inputs"
+                            ? "text-blue-500 border-b-2 border-blue-500"
+                            : "text-gray-700 dark:text-gray-300"
+                        }`}
+                        onClick={() => setTestCaseInnerTab("inputs")}
+                      >
+                        Inputs
+                      </button>
+                      <button
+                        className={`px-3 py-1 font-medium ${
+                          testCaseInnerTab === "results" &&
+                          testCaseResults.length > 0
+                            ? "text-blue-500 border-b-2 border-blue-500"
+                            : "text-gray-700 dark:text-gray-300"
+                        }`}
+                        onClick={() => {
+                          if (testCaseResults.length > 0) {
+                            setTestCaseInnerTab("results");
+                          } else {
+                            setStatus(
+                              "No test results available yet. Run tests first."
+                            );
+                          }
+                        }}
+                      >
+                        Results{" "}
+                        {testCaseResults.length > 0 &&
+                          `(${testSummary.passed}/${testSummary.total})`}
+                      </button>
+                    </div>
 
-                  <div className="flex flex-col h-full overflow-y-auto">
-                    {/* Display inputs or results based on the inner tab selection */}
-                    {testCaseInnerTab === "inputs" ? (
-                      <>
-                        {/* Add/Edit Test Case Form */}
-                        <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-md mb-4">
-                          <h3 className="text-lg font-medium mb-2">
-                            {editingTestCaseId
-                              ? "Edit Test Case"
-                              : "Add Test Case"}
-                          </h3>
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <label className="block text-sm font-medium mb-1">
-                                Input:
-                              </label>
-                              <textarea
-                                value={newTestCaseInput}
-                                onChange={(e) =>
-                                  setNewTestCaseInput(e.target.value)
-                                }
-                                placeholder="Enter test input..."
-                                className="w-full h-20 resize-none font-mono text-sm border rounded p-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200"
-                              ></textarea>
-                            </div>
-                            <div>
-                              <label className="block text-sm font-medium mb-1">
-                                Expected Output:
-                              </label>
-                              <textarea
-                                value={newTestCaseOutput}
-                                onChange={(e) =>
-                                  setNewTestCaseOutput(e.target.value)
-                                }
-                                placeholder="Enter expected output..."
-                                className="w-full h-20 resize-none font-mono text-sm border rounded p-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200"
-                              ></textarea>
-                            </div>
-                          </div>
-                          <div className="flex justify-end mt-2">
-                            {editingTestCaseId ? (
-                              <>
-                                <button
-                                  onClick={() => {
-                                    setEditingTestCaseId(null);
-                                    setNewTestCaseInput("");
-                                    setNewTestCaseOutput("");
-                                  }}
-                                  className="mr-2 px-3 py-1 bg-gray-300 dark:bg-gray-600 text-gray-700 dark:text-gray-300 rounded"
-                                >
-                                  Cancel
-                                </button>
-                                <button
-                                  onClick={saveEditTestCase}
-                                  className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600"
-                                >
-                                  Save Changes
-                                </button>
-                              </>
-                            ) : (
-                              <button
-                                onClick={addTestCase}
-                                className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center"
-                              >
-                                <PlusCircleIcon className="h-4 w-4 mr-1" />
-                                Add Test Case
-                              </button>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Test Cases List */}
-                        {testCases.length > 0 && (
-                          <div className="mt-4">
+                    <div className="flex flex-col h-full overflow-y-auto">
+                      {/* Display inputs or results based on the inner tab selection */}
+                      {testCaseInnerTab === "inputs" ? (
+                        <>
+                          {/* Add/Edit Test Case Form */}
+                          <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-md mb-4">
                             <h3 className="text-lg font-medium mb-2">
-                              My Test Cases
+                              {editingTestCaseId
+                                ? "Edit Test Case"
+                                : "Add Test Case"}
                             </h3>
-                            <div className="space-y-2 overflow-auto max-h-40">
-                              {testCases.map((testCase, index) => (
-                                <div
-                                  key={testCase.id}
-                                  className="p-2 bg-gray-50 dark:bg-gray-700 rounded-md flex justify-between items-center"
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label className="block text-sm font-medium mb-1">
+                                  Input:
+                                </label>
+                                <textarea
+                                  value={newTestCaseInput}
+                                  onChange={(e) =>
+                                    setNewTestCaseInput(e.target.value)
+                                  }
+                                  placeholder="Enter test input..."
+                                  className="w-full h-20 resize-none font-mono text-sm border rounded p-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200"
+                                ></textarea>
+                              </div>
+                              <div>
+                                <label className="block text-sm font-medium mb-1">
+                                  Expected Output:
+                                </label>
+                                <textarea
+                                  value={newTestCaseOutput}
+                                  onChange={(e) =>
+                                    setNewTestCaseOutput(e.target.value)
+                                  }
+                                  placeholder="Enter expected output..."
+                                  className="w-full h-20 resize-none font-mono text-sm border rounded p-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200"
+                                ></textarea>
+                              </div>
+                            </div>
+                            <div className="flex justify-end mt-2">
+                              {editingTestCaseId ? (
+                                <>
+                                  <button
+                                    onClick={() => {
+                                      setEditingTestCaseId(null);
+                                      setNewTestCaseInput("");
+                                      setNewTestCaseOutput("");
+                                    }}
+                                    className="mr-2 px-3 py-1 bg-gray-300 dark:bg-gray-600 text-gray-700 dark:text-gray-300 rounded"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    onClick={saveEditTestCase}
+                                    className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600"
+                                  >
+                                    Save Changes
+                                  </button>
+                                </>
+                              ) : (
+                                <button
+                                  onClick={addTestCase}
+                                  className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center"
                                 >
-                                  <div className="flex-1 overflow-hidden">
-                                    <div className="font-medium">
-                                      Test Case {index + 1}
+                                  <PlusCircleIcon className="h-4 w-4 mr-1" />
+                                  Add Test Case
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Test Cases List */}
+                          {testCases.length > 0 && (
+                            <div className="mt-4">
+                              <h3 className="text-lg font-medium mb-2">
+                                My Test Cases
+                              </h3>
+                              <div className="space-y-2 overflow-auto max-h-40">
+                                {testCases.map((testCase, index) => (
+                                  <div
+                                    key={testCase.id}
+                                    className="p-2 bg-gray-50 dark:bg-gray-700 rounded-md flex justify-between items-center"
+                                  >
+                                    <div className="flex-1 overflow-hidden">
+                                      <div className="font-medium">
+                                        Test Case {index + 1}
+                                      </div>
+                                      <div className="text-xs text-gray-500 dark:text-gray-400 overflow-hidden overflow-ellipsis whitespace-nowrap">
+                                        Input: {testCase.input.substring(0, 40)}
+                                        {testCase.input.length > 40
+                                          ? "..."
+                                          : ""}
+                                      </div>
                                     </div>
-                                    <div className="text-xs text-gray-500 dark:text-gray-400 overflow-hidden overflow-ellipsis whitespace-nowrap">
-                                      Input: {testCase.input.substring(0, 40)}
-                                      {testCase.input.length > 40 ? "..." : ""}
+                                    <div className="flex space-x-2">
+                                      <button
+                                        onClick={() =>
+                                          runSingleTestCase(testCase, index)
+                                        }
+                                        disabled={isRunningTests}
+                                        className="p-1 text-purple-600 hover:text-purple-800 dark:text-purple-400 dark:hover:text-purple-300 flex items-center gap-1 bg-purple-50 dark:bg-purple-900/20 rounded"
+                                        title="Run this test case"
+                                      >
+                                        <PlayIcon className="h-4 w-4" />
+                                        <span className="text-xs">Run</span>
+                                      </button>
+                                      <button
+                                        onClick={() =>
+                                          startEditTestCase(testCase)
+                                        }
+                                        className="p-1 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                                      >
+                                        Edit
+                                      </button>
+                                      <button
+                                        onClick={() =>
+                                          deleteTestCase(testCase.id)
+                                        }
+                                        className="p-1 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                                      >
+                                        <TrashIcon className="h-4 w-4" />
+                                      </button>
                                     </div>
                                   </div>
-                                  <div className="flex space-x-2">
-                                    <button
-                                      onClick={() =>
-                                        runSingleTestCase(testCase, index)
-                                      }
-                                      disabled={isRunningTests}
-                                      className="p-1 text-purple-600 hover:text-purple-800 dark:text-purple-400 dark:hover:text-purple-300 flex items-center gap-1 bg-purple-50 dark:bg-purple-900/20 rounded"
-                                      title="Run this test case"
-                                    >
-                                      <PlayIcon className="h-4 w-4" />
-                                      <span className="text-xs">Run</span>
-                                    </button>
-                                    <button
-                                      onClick={() =>
-                                        startEditTestCase(testCase)
-                                      }
-                                      className="p-1 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
-                                    >
-                                      Edit
-                                    </button>
-                                    <button
-                                      onClick={() =>
-                                        deleteTestCase(testCase.id)
-                                      }
-                                      className="p-1 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
-                                    >
-                                      <TrashIcon className="h-4 w-4" />
-                                    </button>
-                                  </div>
-                                </div>
-                              ))}
+                                ))}
+                              </div>
+                              {!isRunningTests && (
+                                <button
+                                  onClick={runAllTestCases}
+                                  className="mt-2 px-3 py-1 bg-purple-500 text-white rounded hover:bg-purple-600 flex items-center"
+                                >
+                                  <ArrowPathIcon className="h-4 w-4 mr-1" />
+                                  Run All Test Cases
+                                </button>
+                              )}
                             </div>
-                            {!isRunningTests && (
-                              <button
-                                onClick={runAllTestCases}
-                                className="mt-2 px-3 py-1 bg-purple-500 text-white rounded hover:bg-purple-600 flex items-center"
-                              >
-                                <ArrowPathIcon className="h-4 w-4 mr-1" />
-                                Run All Test Cases
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </>
-                    ) : testCaseResults.length > 0 ? (
-                      <div className="flex flex-col h-full overflow-y-auto test-results-container">
-                        {/* Test Case Summary */}
-                        <div className="mb-4 bg-gray-100 dark:bg-gray-700 p-3 rounded-md">
-                          <h3 className="text-lg font-medium mb-2">
-                            Test Summary
-                          </h3>
-                          <div className="flex space-x-6">
-                            <div className="flex items-center">
-                              <span className="mr-2">Total:</span>
-                              <span className="font-medium">
-                                {testSummary.total}
-                              </span>
+                          )}
+                        </>
+                      ) : testCaseResults.length > 0 ? (
+                        <div className="flex flex-col h-full overflow-y-auto test-results-container">
+                          {/* Test Case Summary */}
+                          <div className="mb-4 bg-gray-100 dark:bg-gray-700 p-3 rounded-md">
+                            <h3 className="text-lg font-medium mb-2">
+                              Test Summary
+                            </h3>
+                            <div className="flex space-x-6">
+                              <div className="flex items-center">
+                                <span className="mr-2">Total:</span>
+                                <span className="font-medium">
+                                  {testSummary.total}
+                                </span>
+                              </div>
+                              <div className="flex items-center text-green-600">
+                                <CheckCircleIcon className="h-5 w-5 mr-1" />
+                                <span className="font-medium">
+                                  {testSummary.passed}
+                                </span>
+                              </div>
+                              <div className="flex items-center text-red-600">
+                                <XCircleIcon className="h-5 w-5 mr-1" />
+                                <span className="font-medium">
+                                  {testSummary.failed}
+                                </span>
+                              </div>
                             </div>
-                            <div className="flex items-center text-green-600">
-                              <CheckCircleIcon className="h-5 w-5 mr-1" />
-                              <span className="font-medium">
-                                {testSummary.passed}
-                              </span>
-                            </div>
-                            <div className="flex items-center text-red-600">
-                              <XCircleIcon className="h-5 w-5 mr-1" />
-                              <span className="font-medium">
-                                {testSummary.failed}
-                              </span>
+                            <div className="mt-2 text-sm">
+                              {testSummary.passed === testSummary.total ? (
+                                <span className="text-green-600">
+                                  All test cases passed successfully!
+                                </span>
+                              ) : (
+                                <span className="text-red-600">
+                                  {testSummary.failed} test case
+                                  {testSummary.failed !== 1 ? "s" : ""} failed.
+                                  Check the detailed results below.
+                                </span>
+                              )}
                             </div>
                           </div>
-                          <div className="mt-2 text-sm">
-                            {testSummary.passed === testSummary.total ? (
-                              <span className="text-green-600">
-                                All test cases passed successfully!
-                              </span>
-                            ) : (
-                              <span className="text-red-600">
-                                {testSummary.failed} test case
-                                {testSummary.failed !== 1 ? "s" : ""} failed.
-                                Check the detailed results below.
-                              </span>
-                            )}
-                          </div>
-                        </div>
 
-                        {/* Test Case Results */}
-                        <div className="mb-4 test-case-results">
-                          <h3 className="text-lg font-medium mb-2 bg-white dark:bg-gray-800 py-1">
-                            Test Results
-                          </h3>
-                          <div className="space-y-3">
-                            {testCaseResults.map((result, index) => {
-                              const testCase = testCases.find(
-                                (tc) => tc.id === result.testCaseId
-                              );
-                              // Force expand all test cases initially when results are displayed
-                              const isExpanded =
-                                expandedTestCases[result.testCaseId] !==
-                                undefined
-                                  ? expandedTestCases[result.testCaseId]
-                                  : !result.passed; // Auto-expand failed test cases
+                          {/* Test Case Results */}
+                          <div className="mb-4 test-case-results">
+                            <h3 className="text-lg font-medium mb-2 bg-white dark:bg-gray-800 py-1">
+                              Test Results
+                            </h3>
+                            <div className="space-y-3">
+                              {testCaseResults.map((result, index) => {
+                                const testCase = testCases.find(
+                                  (tc) => tc.id === result.testCaseId
+                                );
+                                // Force expand all test cases initially when results are displayed
+                                const isExpanded =
+                                  expandedTestCases[result.testCaseId] !==
+                                  undefined
+                                    ? expandedTestCases[result.testCaseId]
+                                    : !result.passed; // Auto-expand failed test cases
 
-                              // For better output comparison
-                              const expectedOutput =
-                                testCase?.expectedOutput?.trim() || "";
-                              const actualOutput = result.stdout?.trim() || "";
+                                // For better output comparison
+                                const expectedOutput =
+                                  testCase?.expectedOutput?.trim() || "";
+                                const actualOutput =
+                                  result.stdout?.trim() || "";
 
-                              // Function to highlight differences
-                              const renderDiff = () => {
-                                if (
-                                  !result.compilationSucceeded ||
-                                  !expectedOutput ||
-                                  !actualOutput
-                                ) {
-                                  return null;
-                                }
+                                // Function to highlight differences
+                                const renderDiff = () => {
+                                  if (
+                                    !result.compilationSucceeded ||
+                                    !expectedOutput ||
+                                    !actualOutput
+                                  ) {
+                                    return null;
+                                  }
 
-                                if (expectedOutput === actualOutput) {
+                                  if (expectedOutput === actualOutput) {
+                                    return (
+                                      <div className="text-green-600 text-xs">
+                                        Outputs match exactly
+                                      </div>
+                                    );
+                                  }
+
                                   return (
-                                    <div className="text-green-600 text-xs">
-                                      Outputs match exactly
+                                    <div className="col-span-2 mt-2">
+                                      <div className="text-sm font-medium mb-1 text-amber-600">
+                                        Output Difference:
+                                      </div>
+                                      <div className="bg-amber-50 dark:bg-amber-900/20 p-2 rounded overflow-auto max-h-24 text-xs border border-amber-200">
+                                        <p>
+                                          Expected and actual outputs differ:
+                                        </p>
+                                        <ul className="list-disc pl-4 mt-1">
+                                          {expectedOutput.length !==
+                                            actualOutput.length && (
+                                            <li>
+                                              Length: Expected{" "}
+                                              {expectedOutput.length} chars, got{" "}
+                                              {actualOutput.length} chars
+                                            </li>
+                                          )}
+                                          {expectedOutput.split("\n").length !==
+                                            actualOutput.split("\n").length && (
+                                            <li>
+                                              Line count: Expected{" "}
+                                              {
+                                                expectedOutput.split("\n")
+                                                  .length
+                                              }{" "}
+                                              lines, got{" "}
+                                              {actualOutput.split("\n").length}{" "}
+                                              lines
+                                            </li>
+                                          )}
+                                          {/\s/.test(expectedOutput) !==
+                                            /\s/.test(actualOutput) && (
+                                            <li>
+                                              Whitespace differences detected
+                                            </li>
+                                          )}
+                                        </ul>
+                                      </div>
                                     </div>
                                   );
-                                }
+                                };
 
                                 return (
-                                  <div className="col-span-2 mt-2">
-                                    <div className="text-sm font-medium mb-1 text-amber-600">
-                                      Output Difference:
+                                  <div
+                                    key={result.testCaseId}
+                                    className={`p-3 rounded-md ${
+                                      result.passed
+                                        ? "bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-900"
+                                        : "bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-900"
+                                    }`}
+                                  >
+                                    <div
+                                      className="flex justify-between items-center mb-2 cursor-pointer"
+                                      onClick={() =>
+                                        toggleTestCaseExpansion(
+                                          result.testCaseId
+                                        )
+                                      }
+                                    >
+                                      <div className="flex items-center">
+                                        <span className="font-medium mr-2">
+                                          Test Case {index + 1}
+                                        </span>
+                                        {result.passed ? (
+                                          <span className="text-green-600 flex items-center">
+                                            <CheckCircleIcon className="h-5 w-5 mr-1" />
+                                            Passed
+                                          </span>
+                                        ) : (
+                                          <span className="text-red-600 flex items-center">
+                                            <XCircleIcon className="h-5 w-5 mr-1" />
+                                            Failed
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="flex items-center">
+                                        <div className="text-sm text-gray-500 dark:text-gray-400 mr-2">
+                                          {result.executionTime}s,{" "}
+                                          {result.memoryUsed} KB
+                                        </div>
+                                        {isExpanded ? (
+                                          <ChevronUpIcon className="h-5 w-5" />
+                                        ) : (
+                                          <ChevronDownIcon className="h-5 w-5" />
+                                        )}
+                                      </div>
                                     </div>
-                                    <div className="bg-amber-50 dark:bg-amber-900/20 p-2 rounded overflow-auto max-h-24 text-xs border border-amber-200">
-                                      <p>Expected and actual outputs differ:</p>
-                                      <ul className="list-disc pl-4 mt-1">
-                                        {expectedOutput.length !==
-                                          actualOutput.length && (
-                                          <li>
-                                            Length: Expected{" "}
-                                            {expectedOutput.length} chars, got{" "}
-                                            {actualOutput.length} chars
-                                          </li>
-                                        )}
-                                        {expectedOutput.split("\n").length !==
-                                          actualOutput.split("\n").length && (
-                                          <li>
-                                            Line count: Expected{" "}
-                                            {expectedOutput.split("\n").length}{" "}
-                                            lines, got{" "}
-                                            {actualOutput.split("\n").length}{" "}
-                                            lines
-                                          </li>
-                                        )}
-                                        {/\s/.test(expectedOutput) !==
-                                          /\s/.test(actualOutput) && (
-                                          <li>
-                                            Whitespace differences detected
-                                          </li>
-                                        )}
-                                      </ul>
-                                    </div>
+
+                                    {/* Collapsible Details */}
+                                    {isExpanded && (
+                                      <>
+                                        {/* Compilation Status */}
+                                        <div className="mb-2">
+                                          <span className="text-sm">
+                                            Compilation:{" "}
+                                            {result.compilationSucceeded ? (
+                                              <span className="text-green-600">
+                                                Successful
+                                              </span>
+                                            ) : (
+                                              <span className="text-red-600">
+                                                Failed
+                                              </span>
+                                            )}
+                                          </span>
+                                          <span className="ml-4 text-sm">
+                                            Judge0 Status:{" "}
+                                            <span
+                                              className={
+                                                result.status === 3
+                                                  ? "text-green-600"
+                                                  : "text-amber-600"
+                                              }
+                                            >
+                                              {result.statusDescription}
+                                            </span>
+                                          </span>
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-2 mt-2">
+                                          <div>
+                                            <div className="text-sm font-medium mb-1">
+                                              Input:
+                                            </div>
+                                            <pre className="text-xs bg-gray-100 dark:bg-gray-800 p-2 rounded overflow-auto max-h-24">
+                                              {testCase?.input || ""}
+                                            </pre>
+                                          </div>
+                                          <div>
+                                            <div className="text-sm font-medium mb-1">
+                                              Expected Output:
+                                            </div>
+                                            <pre className="text-xs bg-gray-100 dark:bg-gray-800 p-2 rounded overflow-auto max-h-24">
+                                              {testCase?.expectedOutput || ""}
+                                            </pre>
+                                          </div>
+                                          <div className="col-span-2">
+                                            <div className="text-sm font-medium mb-1">
+                                              Actual Output:
+                                            </div>
+                                            <pre className="text-xs bg-gray-100 dark:bg-gray-800 p-2 rounded overflow-auto max-h-24">
+                                              {result.stdout ||
+                                                (result.error
+                                                  ? result.message
+                                                  : "")}
+                                            </pre>
+                                          </div>
+
+                                          {!result.passed && (
+                                            <div className="col-span-2">
+                                              <div className="text-sm font-medium mb-1 text-red-600">
+                                                Reason for Test Failure:
+                                              </div>
+                                              <div className="text-xs bg-red-50 dark:bg-red-900/20 p-2 rounded overflow-auto max-h-24">
+                                                {!result.compilationSucceeded
+                                                  ? "Compilation failed"
+                                                  : "Actual output doesn't match expected output"}
+                                              </div>
+                                            </div>
+                                          )}
+
+                                          {!result.passed &&
+                                            result.compilationSucceeded &&
+                                            renderDiff()}
+
+                                          {(result.stderr ||
+                                            result.compileOutput) && (
+                                            <div className="col-span-2">
+                                              <div className="text-sm font-medium mb-1 text-red-600">
+                                                Error:
+                                              </div>
+                                              <pre className="text-xs bg-gray-100 dark:bg-gray-800 p-2 rounded overflow-auto max-h-24 text-red-600">
+                                                {result.compileOutput ||
+                                                  result.stderr}
+                                              </pre>
+                                            </div>
+                                          )}
+
+                                          {result.message && (
+                                            <div className="col-span-2">
+                                              <div className="text-sm font-medium mb-1 text-amber-600">
+                                                System Message:
+                                              </div>
+                                              <pre className="text-xs bg-gray-100 dark:bg-gray-800 p-2 rounded overflow-auto max-h-24 text-amber-600">
+                                                {result.message}
+                                              </pre>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </>
+                                    )}
                                   </div>
                                 );
-                              };
+                              })}
+                            </div>
+                          </div>
 
-                              return (
-                                <div
-                                  key={result.testCaseId}
-                                  className={`p-3 rounded-md ${
-                                    result.passed
-                                      ? "bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-900"
-                                      : "bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-900"
-                                  }`}
-                                >
-                                  <div
-                                    className="flex justify-between items-center mb-2 cursor-pointer"
-                                    onClick={() =>
-                                      toggleTestCaseExpansion(result.testCaseId)
-                                    }
-                                  >
-                                    <div className="flex items-center">
-                                      <span className="font-medium mr-2">
-                                        Test Case {index + 1}
-                                      </span>
-                                      {result.passed ? (
-                                        <span className="text-green-600 flex items-center">
-                                          <CheckCircleIcon className="h-5 w-5 mr-1" />
-                                          Passed
-                                        </span>
-                                      ) : (
-                                        <span className="text-red-600 flex items-center">
-                                          <XCircleIcon className="h-5 w-5 mr-1" />
-                                          Failed
-                                        </span>
-                                      )}
-                                    </div>
-                                    <div className="flex items-center">
-                                      <div className="text-sm text-gray-500 dark:text-gray-400 mr-2">
-                                        {result.executionTime}s,{" "}
-                                        {result.memoryUsed} KB
-                                      </div>
-                                      {isExpanded ? (
-                                        <ChevronUpIcon className="h-5 w-5" />
-                                      ) : (
-                                        <ChevronDownIcon className="h-5 w-5" />
-                                      )}
-                                    </div>
-                                  </div>
-
-                                  {/* Collapsible Details */}
-                                  {isExpanded && (
-                                    <>
-                                      {/* Compilation Status */}
-                                      <div className="mb-2">
-                                        <span className="text-sm">
-                                          Compilation:{" "}
-                                          {result.compilationSucceeded ? (
-                                            <span className="text-green-600">
-                                              Successful
-                                            </span>
-                                          ) : (
-                                            <span className="text-red-600">
-                                              Failed
-                                            </span>
-                                          )}
-                                        </span>
-                                        <span className="ml-4 text-sm">
-                                          Judge0 Status:{" "}
-                                          <span
-                                            className={
-                                              result.status === 3
-                                                ? "text-green-600"
-                                                : "text-amber-600"
-                                            }
-                                          >
-                                            {result.statusDescription}
-                                          </span>
-                                        </span>
-                                      </div>
-
-                                      <div className="grid grid-cols-2 gap-2 mt-2">
-                                        <div>
-                                          <div className="text-sm font-medium mb-1">
-                                            Input:
-                                          </div>
-                                          <pre className="text-xs bg-gray-100 dark:bg-gray-800 p-2 rounded overflow-auto max-h-24">
-                                            {testCase?.input || ""}
-                                          </pre>
-                                        </div>
-                                        <div>
-                                          <div className="text-sm font-medium mb-1">
-                                            Expected Output:
-                                          </div>
-                                          <pre className="text-xs bg-gray-100 dark:bg-gray-800 p-2 rounded overflow-auto max-h-24">
-                                            {testCase?.expectedOutput || ""}
-                                          </pre>
-                                        </div>
-                                        <div className="col-span-2">
-                                          <div className="text-sm font-medium mb-1">
-                                            Actual Output:
-                                          </div>
-                                          <pre className="text-xs bg-gray-100 dark:bg-gray-800 p-2 rounded overflow-auto max-h-24">
-                                            {result.stdout ||
-                                              (result.error
-                                                ? result.message
-                                                : "")}
-                                          </pre>
-                                        </div>
-
-                                        {!result.passed && (
-                                          <div className="col-span-2">
-                                            <div className="text-sm font-medium mb-1 text-red-600">
-                                              Reason for Test Failure:
-                                            </div>
-                                            <div className="text-xs bg-red-50 dark:bg-red-900/20 p-2 rounded overflow-auto max-h-24">
-                                              {!result.compilationSucceeded
-                                                ? "Compilation failed"
-                                                : "Actual output doesn't match expected output"}
-                                            </div>
-                                          </div>
-                                        )}
-
-                                        {!result.passed &&
-                                          result.compilationSucceeded &&
-                                          renderDiff()}
-
-                                        {(result.stderr ||
-                                          result.compileOutput) && (
-                                          <div className="col-span-2">
-                                            <div className="text-sm font-medium mb-1 text-red-600">
-                                              Error:
-                                            </div>
-                                            <pre className="text-xs bg-gray-100 dark:bg-gray-800 p-2 rounded overflow-auto max-h-24 text-red-600">
-                                              {result.compileOutput ||
-                                                result.stderr}
-                                            </pre>
-                                          </div>
-                                        )}
-
-                                        {result.message && (
-                                          <div className="col-span-2">
-                                            <div className="text-sm font-medium mb-1 text-amber-600">
-                                              System Message:
-                                            </div>
-                                            <pre className="text-xs bg-gray-100 dark:bg-gray-800 p-2 rounded overflow-auto max-h-24 text-amber-600">
-                                              {result.message}
-                                            </pre>
-                                          </div>
-                                        )}
-                                      </div>
-                                    </>
-                                  )}
-                                </div>
-                              );
-                            })}
+                          {/* Buttons to switch to inputs or run tests again */}
+                          <div className="flex justify-between mb-4 mt-auto">
+                            <button
+                              onClick={() => setTestCaseInnerTab("inputs")}
+                              className="px-3 py-1 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-300 dark:hover:bg-gray-600 flex items-center"
+                            >
+                              Back to Inputs
+                            </button>
+                            <button
+                              onClick={runAllTestCases}
+                              className="px-3 py-1 bg-purple-500 text-white rounded hover:bg-purple-600 flex items-center"
+                              disabled={isRunningTests}
+                            >
+                              <ArrowPathIcon className="h-4 w-4 mr-1" />
+                              Run Tests Again
+                            </button>
                           </div>
                         </div>
-
-                        {/* Buttons to switch to inputs or run tests again */}
-                        <div className="flex justify-between mb-4 mt-auto">
-                          <button
-                            onClick={() => setTestCaseInnerTab("inputs")}
-                            className="px-3 py-1 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-300 dark:hover:bg-gray-600 flex items-center"
-                          >
-                            Back to Inputs
-                          </button>
-                          <button
-                            onClick={runAllTestCases}
-                            className="px-3 py-1 bg-purple-500 text-white rounded hover:bg-purple-600 flex items-center"
-                            disabled={isRunningTests}
-                          >
-                            <ArrowPathIcon className="h-4 w-4 mr-1" />
-                            Run Tests Again
-                          </button>
+                      ) : (
+                        <div className="flex justify-center items-center h-full text-gray-500">
+                          No test results yet. Run tests to see results here.
                         </div>
-                      </div>
-                    ) : (
-                      <div className="flex justify-center items-center h-full text-gray-500">
-                        No test results yet. Run tests to see results here.
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Status Bar */}
           <div className="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 p-2 text-gray-700 dark:text-gray-300 text-sm">
