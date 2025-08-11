@@ -3,11 +3,9 @@ import axios from "axios";
 import { ThemeContext } from "../contexts/ThemeContext";
 import {
   PlayIcon,
-  DocumentPlusIcon,
   FolderOpenIcon,
   DocumentArrowDownIcon,
   XMarkIcon,
-  CloudArrowUpIcon,
   CodeBracketIcon,
   Bars3Icon,
   PlusCircleIcon,
@@ -18,14 +16,16 @@ import {
   ArrowPathIcon,
   ChevronDownIcon,
   ChevronUpIcon,
+  PencilIcon,
+  ArrowDownTrayIcon,
 } from "@heroicons/react/24/outline";
 import Editor from "@monaco-editor/react";
 import FileExplorer from "./FileExplorer";
+import { Excalidraw } from "@excalidraw/excalidraw";
+import "@excalidraw/excalidraw/index.css";
+import JSZip from "jszip";
 
-// Import Prism core (using Monaco instead)
-// Removing CSS imports that were causing issues
-
-const IDETab = ({ topic }) => {
+const IDETab = () => {
   const { theme } = useContext(ThemeContext);
   const [judgeLanguages, setJudgeLanguages] = useState([]);
   const [selectedLanguage, setSelectedLanguage] = useState(null);
@@ -274,29 +274,6 @@ int main() {
   ];
 
   // Map Judge0 language ID to Monaco language ID
-  const languageMap = {
-    // C and C++
-    c: "c",
-    cpp: "cpp",
-    // Java
-    java: "java",
-    // Python
-    python: "python",
-    // JavaScript
-    javascript: "javascript",
-    // C#
-    csharp: "csharp",
-    // Go
-    go: "go",
-    // Ruby
-    ruby: "ruby",
-    // Rust
-    rust: "rust",
-    // PHP
-    php: "php",
-    // Default
-    default: "plaintext",
-  };
 
   // Add state for resizable panels
   const [explorerWidth, setExplorerWidth] = useState(() => {
@@ -451,7 +428,7 @@ int main() {
   };
 
   // Basic code prettify function
-  const prettifyCode = (code, language) => {
+  const prettifyCode = (code) => {
     try {
       // Very basic formatting: normalize indentation
       let lines = code.split("\n");
@@ -590,6 +567,20 @@ int main() {
       e.preventDefault();
       toggleExplorer();
     }
+    // Ctrl+I: Open clipboard image in side panel
+    else if ((e.ctrlKey || e.metaKey) && (e.key === "i" || e.key === "I")) {
+      e.preventDefault();
+      openClipboardImageInSide();
+    }
+    // Ctrl+Shift+D: New drawing
+    else if (
+      (e.ctrlKey || e.metaKey) &&
+      e.shiftKey &&
+      (e.key === "D" || e.key === "d")
+    ) {
+      e.preventDefault();
+      newDrawing("root");
+    }
   };
 
   // Toggle file explorer
@@ -618,30 +609,34 @@ int main() {
     };
   }, [activeFileId]);
 
-  // Allow pasting images from clipboard to open in secondary pane
-  useEffect(() => {
-    const handlePasteImage = (e) => {
-      const items = e.clipboardData?.items || [];
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        if (item && item.kind === "file") {
-          const file = item.getAsFile();
-          if (file && file.type && file.type.startsWith("image/")) {
-            e.preventDefault();
-            const url = URL.createObjectURL(file);
-            clearSecondaryImagePreview();
-            setSecondaryImagePreviewUrl(url);
-            setSecondaryImageName(file.name || "pasted-image.png");
-            if (!isSplitView) setIsSplitView(true);
-            break;
+  // Helper to read clipboard image and show in secondary pane (invoked by Ctrl+I)
+  const openClipboardImageInSide = async () => {
+    try {
+      // Prefer Async Clipboard API if available
+      if (navigator.clipboard && navigator.clipboard.read) {
+        const items = await navigator.clipboard.read();
+        for (const item of items) {
+          for (const type of item.types) {
+            console.log(type);
+            if (type.startsWith("image/")) {
+              const blob = await item.getType(type);
+              const url = URL.createObjectURL(blob);
+              clearSecondaryImagePreview();
+              setSecondaryImagePreviewUrl(url);
+              setSecondaryImageName("clipboard-image");
+              if (!isSplitView) setIsSplitView(true);
+              return;
+            }
           }
         }
       }
-    };
-
-    window.addEventListener("paste", handlePasteImage);
-    return () => window.removeEventListener("paste", handlePasteImage);
-  }, [isSplitView]);
+      // Fallback: attempt legacy clipboardData via prompt to paste into a hidden contenteditable (not implemented here)
+      setStatus("No image found in clipboard or permissions denied.");
+    } catch (err) {
+      console.error("Clipboard read failed", err);
+      setStatus("Failed to read clipboard image.");
+    }
+  };
 
   // Set selected language when active file changes
   useEffect(() => {
@@ -749,6 +744,7 @@ int main() {
       json: "json",
       md: "markdown",
       txt: "plaintext",
+      ed: "drawing",
     };
 
     // If extension exists in map, use it, otherwise default to cpp instead of plaintext
@@ -905,6 +901,12 @@ int main() {
 
   // Update file content
   const updateFileContent = (fileId, content) => {
+    const currentFile = files.find((f) => f.id === fileId);
+    if (currentFile && currentFile.content === content) {
+      // No change, avoid triggering unnecessary renders
+      return;
+    }
+
     setFiles((prevFiles) =>
       prevFiles.map((file) =>
         file.id === fileId ? { ...file, content } : file
@@ -1042,7 +1044,7 @@ int main() {
     const input = document.createElement("input");
     input.type = "file";
     input.accept =
-      ".py,.c,.cpp,.h,.hpp,.java,.js,.jsx,.ts,.tsx,.rb,.cs,.go,.rs,.php,.html,.css,.json,.md,.txt,.png,.jpg,.jpeg,.gif,.webp,.bmp,.svg";
+      ".py,.c,.cpp,.h,.hpp,.java,.js,.jsx,.ts,.tsx,.rb,.cs,.go,.rs,.php,.html,.css,.json,.md,.txt,.png,.jpg,.jpeg,.gif,.webp,.bmp,.svg,.ed";
 
     input.onchange = (e) => {
       const file = e.target.files[0];
@@ -1053,7 +1055,7 @@ int main() {
         const url = URL.createObjectURL(file);
         clearSecondaryImagePreview();
         setSecondaryImagePreviewUrl(url);
-        setSecondaryImageName(file.name);
+        setSecondaryImageName(file.name || "pasted-image.png");
         if (!isSplitView) setIsSplitView(true);
         return;
       }
@@ -1968,7 +1970,6 @@ main();`;
     setIsRunningTests(true);
     setTestCaseResults([]);
     // Reset expanded state but preserve defaults for failed tests
-    const initialExpandedState = {};
 
     setActiveTab("testcases");
     setTestCaseInnerTab("results"); // Switch to results tab
@@ -2161,24 +2162,6 @@ main();`;
   }, [isHorizontalLayout]);
 
   // Start splitter drag
-  const handleSplitterDragStart = (e) => {
-    setIsDraggingSplitter(true);
-    splitterDragStartX.current = e.clientX;
-    splitterDragStartRatio.current = splitRatio;
-
-    // Add event listeners to the document
-    document.addEventListener("mousemove", handleSplitterDragMove);
-    document.addEventListener("mouseup", handleSplitterDragEnd);
-
-    // Add classes for styling during drag
-    document.body.classList.add("resize-x");
-    document
-      .querySelector(".editor-container")
-      ?.classList.add("editor-splitter-active");
-
-    // Prevent default to avoid text selection
-    e.preventDefault();
-  };
 
   // Handle splitter drag move
   const handleSplitterDragMove = (e) => {
@@ -2382,6 +2365,239 @@ main();`;
     };
   }, []);
 
+  // Create a new drawing file (.ed)
+  const newDrawing = (parentFolderId = "root") => {
+    const fileId = `file${Date.now()}`;
+    const fileName = `untitled.ed`;
+    const emptyScene = JSON.stringify({
+      type: "excalidraw",
+      elements: [],
+      appState: {},
+      files: {},
+    });
+    const newFile = {
+      id: fileId,
+      name: fileName,
+      content: emptyScene,
+      language: "drawing",
+      languageId: null,
+    };
+    setFiles((prev) => [...prev, newFile]);
+    setActiveFileId(fileId);
+    addFileToWorkspace(parentFolderId, fileId, fileName, emptyScene);
+    setStatus(`Created new drawing: ${fileName}`);
+  };
+
+  // Load Excalidraw styles via CDN to avoid package export issues
+  const ensureExcalidrawStyles = () => {
+    const id = "excalidraw-cdn-css";
+    if (!document.getElementById(id)) {
+      const link = document.createElement("link");
+      link.id = id;
+      link.rel = "stylesheet";
+      link.href =
+        "https://unpkg.com/@excalidraw/excalidraw@0.18.0/dist/excalidraw.min.css";
+      document.head.appendChild(link);
+    }
+  };
+
+  useEffect(() => {
+    ensureExcalidrawStyles();
+  }, []);
+
+  // Simple debounce helper
+  const debounceRef = useRef({});
+  const debounce = (key, fn, delay = 150) => {
+    if (debounceRef.current[key]) {
+      clearTimeout(debounceRef.current[key]);
+    }
+    debounceRef.current[key] = setTimeout(fn, delay);
+  };
+  const clearDebouncesByPrefix = (prefix) => {
+    Object.keys(debounceRef.current).forEach((k) => {
+      if (k.startsWith(prefix)) {
+        clearTimeout(debounceRef.current[k]);
+        delete debounceRef.current[k];
+      }
+    });
+  };
+
+  // Guard to ignore the first onChange after a drawing mounts (to avoid copying stale scene)
+  const firstChangeGuardRef = useRef({});
+
+  // Sanitize Excalidraw appState to avoid non-serializable fields causing runtime errors
+  const sanitizeAppState = (appState) => {
+    if (!appState) return appState;
+    const { collaborators, ...rest } = appState;
+    return rest;
+  };
+  const sanitizeInitialData = (data) => {
+    if (!data) return data;
+    if (data.appState && data.appState.collaborators) {
+      // Remove collaborators so Excalidraw can initialize its own Map
+      const { collaborators, ...rest } = data.appState;
+      data.appState = rest;
+    }
+    return data;
+  };
+
+  // Refs for Excalidraw API to snapshot scenes on unload/tab switch
+  const primaryExcalidrawRef = useRef(null);
+  const singleExcalidrawRef = useRef(null);
+  const secondaryExcalidrawRef = useRef(null);
+  const prevActiveFileIdRef = useRef(null);
+  const prevSecondaryFileIdRef = useRef(null);
+
+  useEffect(() => {
+    const flushActiveDrawing = () => {
+      const currentFile = files.find(
+        (f) => f.id === prevActiveFileIdRef.current
+      );
+      if (!currentFile || currentFile.language !== "drawing") return;
+      const api = singleExcalidrawRef.current || primaryExcalidrawRef.current;
+      if (api && api.getSceneElements) {
+        const elements = api.getSceneElements();
+        const appState = api.getAppState ? api.getAppState() : {};
+        const filesMap = api.getFiles ? api.getFiles() : {};
+        const scene = JSON.stringify({
+          type: "excalidraw",
+          elements,
+          appState: sanitizeAppState(appState),
+          files: filesMap,
+        });
+        updateFileContent(prevActiveFileIdRef.current, scene);
+      }
+      // Also flush secondary pane if present
+      if (prevSecondaryFileIdRef.current) {
+        const secApi = secondaryExcalidrawRef.current;
+        const secFile = files.find(
+          (f) => f.id === prevSecondaryFileIdRef.current
+        );
+        if (secApi && secFile && secFile.language === "drawing") {
+          const elements = secApi.getSceneElements
+            ? secApi.getSceneElements()
+            : [];
+          const appState = secApi.getAppState ? secApi.getAppState() : {};
+          const filesMap = secApi.getFiles ? secApi.getFiles() : {};
+          const scene = JSON.stringify({
+            type: "excalidraw",
+            elements,
+            appState: sanitizeAppState(appState),
+            files: filesMap,
+          });
+          updateFileContent(prevSecondaryFileIdRef.current, scene);
+        }
+      }
+    };
+
+    const handleBeforeUnload = () => flushActiveDrawing();
+    const handleVisibility = () => {
+      if (document.visibilityState === "hidden") flushActiveDrawing();
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [files]);
+
+  // Track previous active file to flush when switching
+  useEffect(() => {
+    if (
+      prevActiveFileIdRef.current &&
+      prevActiveFileIdRef.current !== activeFileId
+    ) {
+      // Attempt to flush previous drawing content
+      const api = singleExcalidrawRef.current || primaryExcalidrawRef.current;
+      if (api && api.getSceneElements) {
+        const elements = api.getSceneElements();
+        const appState = api.getAppState ? api.getAppState() : {};
+        const filesMap = api.getFiles ? api.getFiles() : {};
+        const scene = JSON.stringify({
+          type: "excalidraw",
+          elements,
+          appState: sanitizeAppState(appState),
+          files: filesMap,
+        });
+        updateFileContent(prevActiveFileIdRef.current, scene);
+      }
+      // Cancel any pending debounced writes for previous/next ids
+      clearDebouncesByPrefix(`primary-ed-`);
+      clearDebouncesByPrefix(`single-ed-`);
+      clearDebouncesByPrefix(`secondary-ed-`);
+    }
+    // Initialize first-change guard for the new active file
+    if (activeFileId) firstChangeGuardRef.current[activeFileId] = true;
+    prevActiveFileIdRef.current = activeFileId;
+  }, [activeFileId]);
+
+  // Track previous secondary file to flush when switching in split view
+  useEffect(() => {
+    if (
+      prevSecondaryFileIdRef.current &&
+      prevSecondaryFileIdRef.current !== secondaryFileId
+    ) {
+      const api = secondaryExcalidrawRef.current;
+      if (api && api.getSceneElements) {
+        const elements = api.getSceneElements();
+        const appState = api.getAppState ? api.getAppState() : {};
+        const filesMap = api.getFiles ? api.getFiles() : {};
+        const scene = JSON.stringify({
+          type: "excalidraw",
+          elements,
+          appState: sanitizeAppState(appState),
+          files: filesMap,
+        });
+        updateFileContent(prevSecondaryFileIdRef.current, scene);
+      }
+      clearDebouncesByPrefix(`secondary-ed-`);
+    }
+    if (secondaryFileId) firstChangeGuardRef.current[secondaryFileId] = true;
+    prevSecondaryFileIdRef.current = secondaryFileId;
+  }, [secondaryFileId]);
+
+  // Force remount container for drawing files to avoid any retained internal state
+  const editorContainerKey = `${activeFileId}-${
+    activeFile?.language === "drawing" ? "drawing" : "code"
+  }`;
+
+  // Download whole workspace as a zip
+  const downloadWorkspaceZip = async () => {
+    try {
+      const zip = new JSZip();
+      const rootFolder = zip.folder(workspace.name || "Workspace");
+
+      const appendNode = (node, currentZipFolder, pathPrefix = "") => {
+        if (!node) return;
+        if (node.type === "folder") {
+          const folder = currentZipFolder.folder(node.name || node.id);
+          (node.children || []).forEach((child) => appendNode(child, folder, `${pathPrefix}${node.name || node.id}/`));
+        } else if (node.type === "file") {
+          const fileName = node.name || `${node.id}.txt`;
+          const content = typeof node.content === "string" ? node.content : "";
+          currentZipFolder.file(fileName, content);
+        }
+      };
+
+      appendNode(workspace, rootFolder);
+
+      const blob = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${(workspace.name || "workspace").replace(/\s+/g, "_")}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setStatus("Workspace downloaded as zip");
+    } catch (err) {
+      console.error("Zip download failed", err);
+      setStatus("Failed to download workspace");
+    }
+  };
+
   return (
     <div className="flex flex-col h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-white">
       {/* Control Panel */}
@@ -2472,13 +2688,22 @@ main();`;
               <CodeBracketIcon className="h-5 w-5" />
             </button>
             <button
+              onClick={downloadWorkspaceZip}
+              className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 p-2 rounded hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors flex items-center"
+              title="Download Workspace (ZIP)"
+            >
+              <ArrowDownTrayIcon className="h-5 w-5" />
+            </button>
+            <button
+              onClick={() => newDrawing("root")}
+              className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 p-2 rounded hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors flex items-center"
+              title="New Drawing (.ed)"
+            >
+              <PencilIcon className="h-5 w-5" />
+            </button>
+            <button
               onClick={toggleExplorer}
-              aria-pressed={isExplorerVisible}
-              className={`p-2 rounded transition-colors flex items-center ${
-                isExplorerVisible
-                  ? "bg-blue-500 text-white hover:bg-blue-600"
-                  : "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600"
-              }`}
+              className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 p-2 rounded hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors flex items-center"
               title="Toggle Explorer (Ctrl+B)"
             >
               <Bars3Icon className="h-5 w-5" />
@@ -2662,7 +2887,10 @@ main();`;
           </div>
 
           {/* Monaco Code Editors - Split or Single View */}
-          <div className="flex-1 overflow-hidden editor-container">
+          <div
+            key={editorContainerKey}
+            className="flex-1 overflow-hidden editor-container"
+          >
             {isSplitView ? (
               <div className="flex h-full">
                 {/* Primary Editor */}
@@ -2677,30 +2905,81 @@ main();`;
                     <span className="font-medium">{activeFile?.name}</span>
                   </div>
                   <div className="h-[calc(100%-1.5rem)] primary-editor">
-                    <Editor
-                      height="100%"
-                      width="100%"
-                      language={
-                        activeFile
-                          ? activeFile.name.includes(".")
-                            ? activeFile.language
+                    {activeFile &&
+                    (activeFile.language === "drawing" ||
+                      activeFile.name.endsWith(".ed")) ? (
+                      <Excalidraw
+                        theme={selectedTheme === "vs-dark" ? "dark" : "light"}
+                        initialData={() => {
+                          try {
+                            const parsed = JSON.parse(
+                              activeFile.content || "{}"
+                            );
+                            return (
+                              sanitizeInitialData(parsed) || {
+                                type: "excalidraw",
+                                elements: [],
+                                appState: {},
+                                files: {},
+                              }
+                            );
+                          } catch (_) {
+                            return {
+                              type: "excalidraw",
+                              elements: [],
+                              appState: {},
+                              files: {},
+                            };
+                          }
+                        }}
+                        onChange={(elements, appState, files) => {
+                          const fileIdSnapshot = activeFileId;
+                          if (firstChangeGuardRef.current[fileIdSnapshot]) {
+                            // Skip the initial onChange triggered by mount
+                            firstChangeGuardRef.current[fileIdSnapshot] = false;
+                            return;
+                          }
+                          debounce(
+                            `primary-ed-${fileIdSnapshot}`,
+                            () => {
+                              const scene = JSON.stringify({
+                                type: "excalidraw",
+                                elements,
+                                appState: sanitizeAppState(appState),
+                                files,
+                              });
+                              updateFileContent(fileIdSnapshot, scene);
+                            },
+                            100
+                          );
+                        }}
+                      />
+                    ) : (
+                      <Editor
+                        height="100%"
+                        width="100%"
+                        language={
+                          activeFile
+                            ? activeFile.name.includes(".")
+                              ? activeFile.language
+                              : "cpp"
                             : "cpp"
-                          : "cpp"
-                      }
-                      theme={selectedTheme}
-                      value={activeFile ? activeFile.content : ""}
-                      onChange={handleCodeChangePrimary}
-                      onMount={(editor, monaco) =>
-                        handleEditorDidMount(editor, monaco, false)
-                      }
-                      options={{
-                        readOnly: false,
-                        minimap: { enabled: true },
-                        fontSize: 20,
-                        fontFamily: editorFontFamily,
-                        mouseWheelZoom: true,
-                      }}
-                    />
+                        }
+                        theme={selectedTheme}
+                        value={activeFile ? activeFile.content : ""}
+                        onChange={handleCodeChangePrimary}
+                        onMount={(editor, monaco) =>
+                          handleEditorDidMount(editor, monaco, false)
+                        }
+                        options={{
+                          readOnly: false,
+                          minimap: { enabled: true },
+                          fontSize: 20,
+                          fontFamily: editorFontFamily,
+                          mouseWheelZoom: true,
+                        }}
+                      />
+                    )}
                   </div>
                 </div>
 
@@ -2745,30 +3024,83 @@ main();`;
                         </button>
                       </div>
                     ) : secondaryFile ? (
-                      <Editor
-                        height="100%"
-                        width="100%"
-                        language={
-                          secondaryFile
-                            ? secondaryFile.name.includes(".")
-                              ? secondaryFile.language
+                      secondaryFile.language === "drawing" ||
+                      secondaryFile.name.endsWith(".ed") ? (
+                        <Excalidraw
+                          key={secondaryFileId || "secondary"}
+                          ref={secondaryExcalidrawRef}
+                          theme={selectedTheme === "vs-dark" ? "dark" : "light"}
+                          initialData={() => {
+                            try {
+                              const parsed = JSON.parse(
+                                secondaryFile.content || "{}"
+                              );
+                              return (
+                                sanitizeInitialData(parsed) || {
+                                  type: "excalidraw",
+                                  elements: [],
+                                  appState: {},
+                                  files: {},
+                                }
+                              );
+                            } catch (_) {
+                              return {
+                                type: "excalidraw",
+                                elements: [],
+                                appState: {},
+                                files: {},
+                              };
+                            }
+                          }}
+                          onChange={(elements, appState, files) => {
+                            const fileIdSnapshot = secondaryFileId;
+                            if (firstChangeGuardRef.current[fileIdSnapshot]) {
+                              firstChangeGuardRef.current[
+                                fileIdSnapshot
+                              ] = false;
+                              return;
+                            }
+                            debounce(
+                              `secondary-ed-${fileIdSnapshot}`,
+                              () => {
+                                const scene = JSON.stringify({
+                                  type: "excalidraw",
+                                  elements,
+                                  appState: sanitizeAppState(appState),
+                                  files,
+                                });
+                                updateFileContent(fileIdSnapshot, scene);
+                              },
+                              100
+                            );
+                          }}
+                        />
+                      ) : (
+                        <Editor
+                          height="100%"
+                          width="100%"
+                          language={
+                            secondaryFile
+                              ? secondaryFile.name.includes(".")
+                                ? secondaryFile.language
+                                : "cpp"
                               : "cpp"
-                            : "cpp"
-                        }
-                        theme={selectedTheme}
-                        value={secondaryFile ? secondaryFile.content : ""}
-                        onChange={handleCodeChangeSecondary}
-                        onMount={(editor, monaco) =>
-                          handleEditorDidMount(editor, monaco, true)
-                        }
-                        options={{
-                          readOnly: false,
-                          minimap: { enabled: true },
-                          fontSize: 20,
-                          fontFamily: editorFontFamily,
-                          mouseWheelZoom: true,
-                        }}
-                      />
+                          }
+                          theme={selectedTheme}
+                          value={secondaryFile ? secondaryFile.content : ""}
+                          onChange={handleCodeChangeSecondary}
+                          onMount={(editor, monaco) =>
+                            handleEditorDidMount(editor, monaco, true)
+                          }
+                          options={{
+                            readOnly: false,
+                            minimap: { enabled: true },
+                            fontSize: 20,
+                            fontFamily: editorFontFamily,
+                            mouseWheelZoom: true,
+                          }}
+                        />
+                      )
                     ) : (
                       <div className="h-full flex items-center justify-center text-gray-400">
                         <div className="text-center">
@@ -2787,29 +3119,77 @@ main();`;
                 </div>
               </div>
             ) : (
-              <div className="h-full">
-                <Editor
-                  height="100%"
-                  width="100%"
-                  language={
-                    activeFile
-                      ? activeFile.name.includes(".")
-                        ? activeFile.language
+              <div key={editorContainerKey} className="h-full">
+                {activeFile &&
+                (activeFile.language === "drawing" ||
+                  activeFile.name.endsWith(".ed")) ? (
+                  <Excalidraw
+                    theme={selectedTheme === "vs-dark" ? "dark" : "light"}
+                    initialData={() => {
+                      try {
+                        const parsed = JSON.parse(activeFile.content || "{}");
+                        return (
+                          sanitizeInitialData(parsed) || {
+                            type: "excalidraw",
+                            elements: [],
+                            appState: {},
+                            files: {},
+                          }
+                        );
+                      } catch (_) {
+                        return {
+                          type: "excalidraw",
+                          elements: [],
+                          appState: {},
+                          files: {},
+                        };
+                      }
+                    }}
+                    onChange={(elements, appState, files) => {
+                      const fileIdSnapshot = activeFileId;
+                      if (firstChangeGuardRef.current[fileIdSnapshot]) {
+                        firstChangeGuardRef.current[fileIdSnapshot] = false;
+                        return;
+                      }
+                      debounce(
+                        `single-ed-${fileIdSnapshot}`,
+                        () => {
+                          const scene = JSON.stringify({
+                            type: "excalidraw",
+                            elements,
+                            appState: sanitizeAppState(appState),
+                            files,
+                          });
+                          updateFileContent(fileIdSnapshot, scene);
+                        },
+                        100
+                      );
+                    }}
+                  />
+                ) : (
+                  <Editor
+                    height="100%"
+                    width="100%"
+                    language={
+                      activeFile
+                        ? activeFile.name.includes(".")
+                          ? activeFile.language
+                          : "cpp"
                         : "cpp"
-                      : "cpp"
-                  }
-                  theme={selectedTheme}
-                  value={activeFile ? activeFile.content : ""}
-                  onChange={handleCodeChange}
-                  onMount={handleEditorDidMount}
-                  options={{
-                    readOnly: false,
-                    minimap: { enabled: true },
-                    fontSize: 20,
-                    fontFamily: editorFontFamily,
-                    mouseWheelZoom: true,
-                  }}
-                />
+                    }
+                    theme={selectedTheme}
+                    value={activeFile ? activeFile.content : ""}
+                    onChange={handleCodeChange}
+                    onMount={handleEditorDidMount}
+                    options={{
+                      readOnly: false,
+                      minimap: { enabled: true },
+                      fontSize: 20,
+                      fontFamily: editorFontFamily,
+                      mouseWheelZoom: true,
+                    }}
+                  />
+                )}
               </div>
             )}
           </div>
