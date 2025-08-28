@@ -80,7 +80,17 @@ function AppContent() {
       </main>
       <footer className="bg-gray-800 dark:bg-gray-900 py-4 border-t border-gray-700">
         <div className="container mx-auto text-center">
-          <p className="text-gray-300">Made with <span className="text-red-500">❤️</span> by <span className="text-orange-400 font-medium">Shahnawaz</span></p>
+          <p className="text-gray-300">
+            Made with <span className="text-red-500">❤️</span> by{' '}
+            <a
+              href="https://github.com/TheShahnawaaz/"
+              className="text-orange-400 font-medium"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Shahnawaz
+            </a>
+          </p>
         </div>
       </footer>
     </div>
