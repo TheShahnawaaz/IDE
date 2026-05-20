@@ -2,6 +2,7 @@
   "name": "myide",
   "version": "0.1.0",
   "private": true,
+  "homepage": "https://TheShahnawaaz.github.io/IDE/",
   "dependencies": {
     "@excalidraw/excalidraw": "^0.18.0",
     "@heroicons/react": "^2.2.0",
